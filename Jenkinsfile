@@ -46,6 +46,7 @@ pipeline {
       steps {
         script {
           sh '''
+          set -eux
           docker login -u $DOCKER_ID -p $DOCKER_PASS
           docker push $DOCKER_ID/$DOCKER_IMAGE:$DOCKER_TAG
           '''
@@ -61,14 +62,13 @@ stage('Deployment in dev'){
       steps {
         script {
           sh '''
+          set -eux
           rm -Rf .kube
           mkdir .kube
-          ls
           cat $KUBECONFIG > .kube/config
           cp fastapi/values.yaml values.yml
-          cat values.yml
           sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" values.yml
-          helm upgrade --install app fastapi --values=values.yml --namespace dev
+          KUBECONFIG=.kube/config helm upgrade --install app fastapi --values=values.yml --namespace dev
           '''
         }
       }
@@ -119,4 +119,4 @@ stage('Deployment in dev'){
       }
     }
   }
-}    
+}
