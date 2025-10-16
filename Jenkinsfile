@@ -53,67 +53,67 @@ pipeline {
       }
     }
 
-    stage('Deployment in dev'){
-      environment
-      {
-        KUBECONFIG = credentials("config") // we retrieve kubeconfig from secret file called config saved on jenkins
-      }
+    stage('Deployment in dev') {
+      environment { KUBECONFIG = credentials('config') }
       steps {
         script {
           sh '''
-          rm -Rf .kube
-          mkdir .kube
-          ls
-          cat $KUBECONFIG > .kube/config
+          set -eux
+          rm -rf .kube
+          mkdir -p .kube
+          if [ -f "$KUBECONFIG" ]; then
+            cp "$KUBECONFIG" .kube/config
+          else
+            printf '%s\n' "$KUBECONFIG" > .kube/config
+          fi
           cp fastapi/values.yaml values.yml
-          cat values.yml
-          sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" values.yml
-          helm upgrade --install app fastapi --values=values.yml --namespace dev
+          sed -i "s+tag:.*+tag: ${DOCKER_TAG}+g" values.yml
+          KUBECONFIG=.kube/config helm upgrade --install app fastapi --values=values.yml --namespace dev --create-namespace
           '''
         }
       }
     }
 
     stage('Deployment in staging') {
-      environment {
-        KUBECONFIG = credentials("config") // we retrieve kubeconfig from secret file called config saved on jenkins
-      }
+      environment { KUBECONFIG = credentials('config') }
       steps {
         script {
           sh '''
-          rm -Rf .kube
-          mkdir .kube
-          ls
-          cat $KUBECONFIG > .kube/config
+          set -eux
+          rm -rf .kube
+          mkdir -p .kube
+          if [ -f "$KUBECONFIG" ]; then
+            cp "$KUBECONFIG" .kube/config
+          else
+            printf '%s\n' "$KUBECONFIG" > .kube/config
+          fi
           cp fastapi/values.yaml values.yml
-          cat values.yml
-          sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" values.yml
-          helm upgrade --install app fastapi --values=values.yml --namespace staging
+          sed -i "s+tag:.*+tag: ${DOCKER_TAG}+g" values.yml
+          KUBECONFIG=.kube/config helm upgrade --install app fastapi --values=values.yml --namespace staging --create-namespace
           '''
         }
       }
     }
 
-    stage('Deploiement en prod'){
-      environment {
-        KUBECONFIG = credentials("config") // we retrieve kubeconfig from secret file called config saved on jenkins
-      }
+    stage('Deployment to prod') {
+      environment { KUBECONFIG = credentials('config') }
       steps {
-      // Create an Approval Button with a timeout of 15 minutes.
-      // this requires a manual validation in order to deploy on production environment
-        timeout(time: 15, unit: "MINUTES") {
-            input message: 'Do you want to deploy in production ?', ok: 'Yes'
+        timeout(time: 15, unit: 'MINUTES') {
+          input message: 'Do you want to deploy in production?', ok: 'Yes'
         }
         script {
           sh '''
-          rm -Rf .kube
-          mkdir .kube
-          ls
-          cat $KUBECONFIG > .kube/config
+          set -eux
+          rm -rf .kube
+          mkdir -p .kube
+          if [ -f "$KUBECONFIG" ]; then
+            cp "$KUBECONFIG" .kube/config
+          else
+            printf '%s\n' "$KUBECONFIG" > .kube/config
+          fi
           cp fastapi/values.yaml values.yml
-          cat values.yml
-          sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" values.yml
-          helm upgrade --install app fastapi --values=values.yml --namespace prod
+          sed -i "s+tag:.*+tag: ${DOCKER_TAG}+g" values.yml
+          KUBECONFIG=.kube/config helm upgrade --install app fastapi --values=values.yml --namespace prod --create-namespace
           '''
         }
       }
