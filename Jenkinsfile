@@ -1,89 +1,74 @@
-// ...existing code...
 pipeline {
-  environment {
-    DOCKER_ID = "franciswebandapp"
+  environment { // Declaration of environment variables
+    DOCKER_ID = "franciswebandapp" // replace this with your docker-id
     DOCKER_IMAGE = "jenkins"
-    DOCKER_TAG = "v.${BUILD_ID}.0"
+    DOCKER_TAG = "v.${BUILD_ID}.0" // we will tag our images with the current build in order to increment the value by 1 with each new build
   }
-  agent any
+  agent any // Jenkins will be able to select all available agents
   stages {
-    stage('Checkout') {
-      steps {
-        checkout scm
-      }
-    }
-
-    stage('Docker Build') {
+    stage('Docker Build') { // docker build image stage
       steps {
         script {
           sh '''
-          set -eux
-          docker rm -f jenkins || true
-          docker build -t "$DOCKER_ID/$DOCKER_IMAGE:$DOCKER_TAG" .
-          sleep 2
+          docker rm -f jenkins
+          docker build -t $DOCKER_ID/$DOCKER_IMAGE:$DOCKER_TAG .
+          sleep 6
           '''
         }
       }
     }
 
-    stage('Docker Run') {
+    stage(' Docker run') { // run container from our built image
       steps {
         script {
           sh '''
-          set -eux
-          docker rm -f jenkins || true
-          docker run -d -p 80:80 --name jenkins "$DOCKER_ID/$DOCKER_IMAGE:$DOCKER_TAG"
-          sleep 5
+          docker run -d -p 80:80 --name jenkins $DOCKER_ID/$DOCKER_IMAGE:$DOCKER_TAG
+          sleep 10
           '''
         }
       }
     }
 
-    stage('Test Acceptance') {
+    stage('Test Acceptance') { // we launch the curl command to validate that the container responds to the request
       steps {
         script {
           sh '''
-          set -eux
-          curl -sSf http://localhost/
+          curl localhost
           '''
         }
       }
     }
 
-    stage('Docker Push') {
+    stage('Docker Push') { //we pass the built image to our docker hub account
       environment {
-        DOCKER_PASS = credentials("DOCKER_HUB_PASS")
-      }
+            DOCKER_PASS = credentials("DOCKER_HUB_PASS") // we retrieve docker password from secret text called docker_hub_pass saved on jenkins
+        }
       steps {
         script {
           sh '''
-          set -eux
-          echo "$DOCKER_PASS" | docker login -u "$DOCKER_ID" --password-stdin
-          docker push "$DOCKER_ID/$DOCKER_IMAGE:$DOCKER_TAG"
+          docker login -u $DOCKER_ID -p $DOCKER_PASS
+          docker push $DOCKER_ID/$DOCKER_IMAGE:$DOCKER_TAG
           '''
         }
       }
     }
 
-    stage('Deployment in dev') {
-      environment {
-        KUBECONFIG = credentials("config")
+    stage('Deployment in dev'){
+      environment
+      {
+        KUBECONFIG = credentials("config") // we retrieve kubeconfig from secret file called config saved on jenkins
       }
       steps {
         script {
           sh '''
-          set -eux
-          rm -rf .kube
-          mkdir -p .kube
-          # if KUBECONFIG is a file path provided by Jenkins credentials, copy; otherwise write content
-          if [ -f "$KUBECONFIG" ]; then
-            cp "$KUBECONFIG" .kube/config
-          else
-            printf '%s\n' "$KUBECONFIG" > .kube/config
-          fi
+          rm -Rf .kube
+          mkdir .kube
+          ls
+          cat $KUBECONFIG > .kube/config
           cp fastapi/values.yaml values.yml
-          sed -i "s+tag:.*+tag: ${DOCKER_TAG}+g" values.yml
-          KUBECONFIG=.kube/config helm upgrade --install app fastapi --values=values.yml --namespace dev --create-namespace
+          cat values.yml
+          sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" values.yml
+          helm upgrade --install app fastapi --values=values.yml --namespace dev
           '''
         }
       }
@@ -91,214 +76,46 @@ pipeline {
 
     stage('Deployment in staging') {
       environment {
-        KUBECONFIG = credentials("config")
+        KUBECONFIG = credentials("config") // we retrieve kubeconfig from secret file called config saved on jenkins
       }
       steps {
         script {
           sh '''
-          set -eux
-          rm -rf .kube
-          mkdir -p .kube
-          if [ -f "$KUBECONFIG" ]; then
-            cp "$KUBECONFIG" .kube/config
-          else
-            printf '%s\n' "$KUBECONFIG" > .kube/config
-          fi
+          rm -Rf .kube
+          mkdir .kube
+          ls
+          cat $KUBECONFIG > .kube/config
           cp fastapi/values.yaml values.yml
-          sed -i "s+tag:.*+tag: ${DOCKER_TAG}+g" values.yml
-          KUBECONFIG=.kube/config helm upgrade --install app fastapi --values=values.yml --namespace staging --create-namespace
+          cat values.yml
+          sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" values.yml
+          helm upgrade --install app fastapi --values=values.yml --namespace staging
           '''
         }
       }
     }
 
-    stage('Deployment to prod') {
+    stage('Deploiement en prod'){
       environment {
-        KUBECONFIG = credentials("config")
+        KUBECONFIG = credentials("config") // we retrieve kubeconfig from secret file called config saved on jenkins
       }
       steps {
-        timeout(time: 15, unit: 'MINUTES') {
-          input message: 'Do you want to deploy in production?', ok: 'Yes'
+      // Create an Approval Button with a timeout of 15 minutes.
+      // this requires a manual validation in order to deploy on production environment
+        timeout(time: 15, unit: "MINUTES") {
+            input message: 'Do you want to deploy in production ?', ok: 'Yes'
         }
         script {
           sh '''
-          set -eux
-          rm -rf .kube
-          mkdir -p .kube
-          if [ -f "$KUBECONFIG" ]; then
-            cp "$KUBECONFIG" .kube/config
-          else
-            printf '%s\n' "$KUBECONFIG" > .kube/config
-          fi
+          rm -Rf .kube
+          mkdir .kube
+          ls
+          cat $KUBECONFIG > .kube/config
           cp fastapi/values.yaml values.yml
-          sed -i "s+tag:.*+tag: ${DOCKER_TAG}+g" values.yml
-          KUBECONFIG=.kube/config helm upgrade --install app fastapi --values=values.yml --namespace prod --create-namespace
+          cat values.yml
+          sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" values.yml
+          helm upgrade --install app fastapi --values=values.yml --namespace prod
           '''
         }
-      }
-    }
-  }
-
-  post {
-    always {
-      script {
-        sh '''
-        set -eux || true
-        docker rm -f jenkins || true
-        '''
-      }
-    }
-  }
-}
-```// filepath: /home/cyriacus1210/datascientest-jenkins/Jenkinsfile
-// ...existing code...
-pipeline {
-  environment {
-    DOCKER_ID = "franciswebandapp"
-    DOCKER_IMAGE = "jenkins"
-    DOCKER_TAG = "v.${BUILD_ID}.0"
-  }
-  agent any
-  stages {
-    stage('Checkout') {
-      steps {
-        checkout scm
-      }
-    }
-
-    stage('Docker Build') {
-      steps {
-        script {
-          sh '''
-          set -eux
-          docker rm -f jenkins || true
-          docker build -t "$DOCKER_ID/$DOCKER_IMAGE:$DOCKER_TAG" .
-          sleep 2
-          '''
-        }
-      }
-    }
-
-    stage('Docker Run') {
-      steps {
-        script {
-          sh '''
-          set -eux
-          docker rm -f jenkins || true
-          docker run -d -p 80:80 --name jenkins "$DOCKER_ID/$DOCKER_IMAGE:$DOCKER_TAG"
-          sleep 5
-          '''
-        }
-      }
-    }
-
-    stage('Test Acceptance') {
-      steps {
-        script {
-          sh '''
-          set -eux
-          curl -sSf http://localhost/
-          '''
-        }
-      }
-    }
-
-    stage('Docker Push') {
-      environment {
-        DOCKER_PASS = credentials("DOCKER_HUB_PASS")
-      }
-      steps {
-        script {
-          sh '''
-          set -eux
-          echo "$DOCKER_PASS" | docker login -u "$DOCKER_ID" --password-stdin
-          docker push "$DOCKER_ID/$DOCKER_IMAGE:$DOCKER_TAG"
-          '''
-        }
-      }
-    }
-
-    stage('Deployment in dev') {
-      environment {
-        KUBECONFIG = credentials("config")
-      }
-      steps {
-        script {
-          sh '''
-          set -eux
-          rm -rf .kube
-          mkdir -p .kube
-          # if KUBECONFIG is a file path provided by Jenkins credentials, copy; otherwise write content
-          if [ -f "$KUBECONFIG" ]; then
-            cp "$KUBECONFIG" .kube/config
-          else
-            printf '%s\n' "$KUBECONFIG" > .kube/config
-          fi
-          cp fastapi/values.yaml values.yml
-          sed -i "s+tag:.*+tag: ${DOCKER_TAG}+g" values.yml
-          KUBECONFIG=.kube/config helm upgrade --install app fastapi --values=values.yml --namespace dev --create-namespace
-          '''
-        }
-      }
-    }
-
-    stage('Deployment in staging') {
-      environment {
-        KUBECONFIG = credentials("config")
-      }
-      steps {
-        script {
-          sh '''
-          set -eux
-          rm -rf .kube
-          mkdir -p .kube
-          if [ -f "$KUBECONFIG" ]; then
-            cp "$KUBECONFIG" .kube/config
-          else
-            printf '%s\n' "$KUBECONFIG" > .kube/config
-          fi
-          cp fastapi/values.yaml values.yml
-          sed -i "s+tag:.*+tag: ${DOCKER_TAG}+g" values.yml
-          KUBECONFIG=.kube/config helm upgrade --install app fastapi --values=values.yml --namespace staging --create-namespace
-          '''
-        }
-      }
-    }
-
-    stage('Deployment to prod') {
-      environment {
-        KUBECONFIG = credentials("config")
-      }
-      steps {
-        timeout(time: 15, unit: 'MINUTES') {
-          input message: 'Do you want to deploy in production?', ok: 'Yes'
-        }
-        script {
-          sh '''
-          set -eux
-          rm -rf .kube
-          mkdir -p .kube
-          if [ -f "$KUBECONFIG" ]; then
-            cp "$KUBECONFIG" .kube/config
-          else
-            printf '%s\n' "$KUBECONFIG" > .kube/config
-          fi
-          cp fastapi/values.yaml values.yml
-          sed -i "s+tag:.*+tag: ${DOCKER_TAG}+g" values.yml
-          KUBECONFIG=.kube/config helm upgrade --install app fastapi --values=values.yml --namespace prod --create-namespace
-          '''
-        }
-      }
-    }
-  }
-
-  post {
-    always {
-      script {
-        sh '''
-        set -eux || true
-        docker rm -f jenkins || true
-        '''
       }
     }
   }
