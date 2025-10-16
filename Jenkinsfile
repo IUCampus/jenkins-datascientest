@@ -61,11 +61,25 @@ pipeline {
           set -eux
           rm -rf .kube
           mkdir -p .kube
+
+          # write or copy kubeconfig (works for both file and secret-text credentials)
           if [ -f "$KUBECONFIG" ]; then
             cp "$KUBECONFIG" .kube/config
           else
             printf '%s\n' "$KUBECONFIG" > .kube/config
           fi
+
+          # debug: surface kubeconfig server and current-context
+          echo "----- kubeconfig (masked) -----"
+          grep -E "server:|current-context:" .kube/config || true
+          echo "----- kubectl version & cluster-info -----"
+          KUBECONFIG=.kube/config kubectl version --client --short || true
+          KUBECONFIG=.kube/config kubectl cluster-info || true
+          echo "----- try listing namespaces -----"
+          KUBECONFIG=.kube/config kubectl get ns --no-headers || true
+
+          # If the above commands show HTML or "authentication required", kubeconfig is invalid/auth-less.
+          # Proceed to helm only if kubeconfig appears usable.
           cp fastapi/values.yaml values.yml
           sed -i "s+tag:.*+tag: ${DOCKER_TAG}+g" values.yml
           KUBECONFIG=.kube/config helm upgrade --install app fastapi --values=values.yml --namespace dev --create-namespace
