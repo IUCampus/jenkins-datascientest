@@ -6,6 +6,14 @@ pipeline {
   }
   agent any // Jenkins will be able to select all available agents
   stages {
+    stage('Checkout') {
+      steps {
+        checkout([$class: 'GitSCM',
+          branches: [[name: '*/main']],
+          userRemoteConfigs: [[url: 'https://github.com/IUCampus/jenkins-datascientest.git']]
+        ])
+      }
+    }
     stage('Docker Build') { // docker build image stage
       steps {
         script {
